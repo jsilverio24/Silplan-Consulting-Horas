@@ -169,7 +169,7 @@ table.data tr.flag td{background:color-mix(in srgb,var(--bad) 8%,transparent)}
           <b>Arrastre aquí</b> o haga clic para elegir<br>
           <span class="note">DXF (curvas y red) · CSV/TXT de puntos (PNEZD o X,Y,Z) · Proyecto .json</span>
         </div>
-        <input type="file" id="fileIn" multiple accept=".dxf,.dwg,.csv,.txt,.xyz,.json" hidden>
+        <input type="file" id="fileIn" multiple accept=".dxf,.csv,.txt,.xyz,.json" hidden>
         <div class="grid2">
           <label class="f">Unidades del dibujo
             <select id="units"><option value="1">Metros</option><option value="0.001">Milímetros</option><option value="0.3048">Pies</option></select>
@@ -183,7 +183,7 @@ table.data tr.flag td{background:color-mix(in srgb,var(--bad) 8%,transparent)}
           <button class="btn sm" id="btnDemo">Cargar ejemplo</button>
           <button class="btn sm" id="btnClear">Vaciar todo</button>
         </div>
-        <p class="note">DWG: guárdelo como DXF desde AutoCAD/Civil 3D (comando GUARDARCOMO → DXF) o conviértalo con el programa gratuito ODA File Converter.</p>
+        <p class="note">Los dibujos se trabajan en DXF. Desde AutoCAD o Civil 3D: GUARDARCOMO → DXF.</p>
       </div>
     </details>
 
@@ -460,8 +460,8 @@ async function handleFiles(list){
     const rec = {name:f.name, info:'', err:''};
     S.files.push(rec);
     try {
-      if (ext === 'dwg'){
-        rec.err = 'DWG es un formato cerrado de Autodesk. Guárdelo como DXF (GUARDARCOMO → DXF 2013) o conviértalo con ODA File Converter y vuelva a cargarlo.';
+      if (!['dxf','json','csv','txt','xyz'].includes(ext)){
+        rec.err = 'Formato no admitido. Use DXF para dibujos y CSV/TXT para puntos.';
       } else if (ext === 'json'){
         loadProject(JSON.parse(await f.text())); rec.info = 'proyecto';
       } else if (ext === 'dxf'){
