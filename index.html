@@ -2,7 +2,16 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0a1628">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Silplan Horas">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script src="config.js"></script>
 <title>Control de Hora — Silplan Consulting</title>
 <meta name="description" content="App disponible en: https://melodious-swan-d7484f.netlify.app">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -572,6 +581,17 @@
   .obra-fotos .ph input { width:100%; margin-top:4px; font-size:11px; padding:5px 7px; }
   #ob-sig { width:100%; height:140px; display:block; touch-action:none; }
   @media (max-width: 500px) { .obra-partida-nums { grid-template-columns: 1fr 1fr 1fr; } .obra-fotos { grid-template-columns: 1fr 1fr; } }
+  /* ── SYNC / INSTALL ── */
+  .sync-bar { display:none; margin:-16px 0 20px; padding:10px 14px; border-radius:10px; font-size:12.5px; cursor:pointer; border:1px solid var(--border); }
+  .sync-bar.show { display:block; }
+  .sync-bar.ok { background:rgba(34,197,94,0.08); border-color:rgba(34,197,94,0.3); color:#86efac; }
+  .sync-bar.pending { background:rgba(240,165,0,0.08); border-color:rgba(240,165,0,0.35); color:var(--accent-light); }
+  .sync-bar.err { background:rgba(239,68,68,0.08); border-color:rgba(239,68,68,0.35); color:#fca5a5; }
+  .install-bar { display:flex; align-items:center; gap:10px; margin:-6px 0 20px; padding:12px 14px; border-radius:12px; background:linear-gradient(135deg,rgba(30,111,217,0.18),rgba(42,82,152,0.12)); border:1px solid rgba(30,111,217,0.35); font-size:12.5px; color:var(--gray-light); }
+  .install-bar > div { flex:1; }
+  .install-bar strong { color:var(--white); font-size:13.5px; }
+  #install-btn { background:var(--accent); color:#1a1a1a; border:none; border-radius:8px; padding:9px 14px; font-weight:700; font-family:'DM Sans',sans-serif; cursor:pointer; }
+  .install-x { background:transparent; border:none; color:var(--gray); font-size:16px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -595,6 +615,13 @@
       <button class="nav-tab" onclick="showView('obra')">Control de Obra</button>
     </div>
   </header>
+
+  <div id="sync-bar" class="sync-bar" onclick="syncFlush(true)"></div>
+  <div id="install-bar" class="install-bar" style="display:none">
+    <div><strong>📲 Instala la app</strong><br><span id="install-text">Agrégala a tu pantalla de inicio para usarla como aplicación.</span></div>
+    <button type="button" id="install-btn" onclick="installApp()">Instalar</button>
+    <button type="button" class="install-x" onclick="dismissInstall()">✕</button>
+  </div>
 
   <!-- FORM VIEW -->
   <div id="view-form" class="view active">
@@ -785,6 +812,10 @@
           </select>
         </div>
         <div class="field" style="margin-top:14px;">
+          <label>Ciudad / Municipio / Sector</label>
+          <input type="text" id="city" placeholder="Ej.: Santiago de los Caballeros, Gurabo">
+        </div>
+        <div class="field" style="margin-top:14px;">
           <label>Descripción de actividades <span class="req">*</span></label>
           <textarea id="work-desc" placeholder="Selecciona un tipo de trabajo para ver las indicaciones..."></textarea>
         </div>
@@ -950,6 +981,10 @@
             <option>Santiago</option><option>Santiago Rodríguez</option>
             <option>Santo Domingo</option><option>Valverde</option>
           </select>
+        </div>
+        <div class="field" style="margin-top:14px;">
+          <label>Ciudad / Municipio / Sector</label>
+          <input type="text" id="r-city" placeholder="Ej.: Santiago de los Caballeros, Gurabo">
         </div>
       </div>
     </div>
@@ -1495,7 +1530,7 @@ function submitForm() {
 
   const hours   = parseFloat(document.getElementById('hours-total').textContent);
   const supName = document.getElementById('sup-name').value.trim();
-  const sig     = canvas.toDataURL();
+  const sig     = hasSignature ? canvas.toDataURL() : null;
   const sigSup  = (canvasSup && hasSignatureSup) ? canvasSup.toDataURL() : null;
 
   const record = {
@@ -1505,6 +1540,8 @@ function submitForm() {
     auxBName, auxBNum,
     date, timeStart: tStart, timeEnd: tEnd,
     brigade, hours, workType: type, workSubtype: subtype, client, project, desc,
+    city: (document.getElementById('city').value || '').trim(),
+    source: 'Registro',
     signature: sig,
     signatureSup: sigSup,
     supervisorName: supName,
@@ -1514,6 +1551,7 @@ function submitForm() {
 
   records.unshift(record);
   localStorage.setItem('overtime_records', JSON.stringify(records));
+  syncEnqueue([record]);
 
   // 1) Generate and download PDF
   generateRecordPDF(record);
@@ -1610,6 +1648,7 @@ function generateRecordPDF(r) {
       <div class="fld"><label>Tipo de Trabajo</label><span>${r.workSubtype||r.workType}</span></div>
       <div class="fld"><label>Cliente</label><span>${r.client||'—'}</span></div>
       <div class="fld"><label>Provincia</label><span>${r.project||'—'}</span></div>
+      ${r.city ? `<div class="fld"><label>Ciudad / Sector</label><span>${r.city}</span></div>` : ''}
       <div class="fld full"><label>Descripción de Actividades</label><div class="desc">${r.desc}</div></div>
     </div>
     <div class="sigs">
@@ -1649,6 +1688,7 @@ function buildWAMsg(r) {
     `🔧 *Trabajo:* ${r.workSubtype||''}`,
     `🏢 *Cliente:* ${r.client||''}`,
     r.project ? `📍 *Provincia:* ${r.project}` : '',
+    r.city ? `🏙️ *Ciudad:* ${r.city}` : '',
     '━━━━━━━━━━━━━━━━━━━━━',
     r.approved && r.supervisorName ? `✅ *Aprobado por:* ${r.supervisorName}` : r.supervisorName ? `⏳ *Supervisor:* ${r.supervisorName}` : '⚠️ Sin aprobación',
     `_${new Date().toLocaleString('es-MX')}_`,
@@ -1780,7 +1820,8 @@ function renderHistory() {
           <span class="tag tag-blue">🔧 ${r.workSubtype||r.workType}</span>
           ${r.client ? `<span class="tag tag-amber">🏢 ${r.client}</span>` : ''}
           ${r.project ? `<span class="tag tag-amber">📍 ${r.project}</span>` : ''}
-          ${r.approved ? `<span class="tag tag-green">✓ Aprobado</span>` : `<span class="tag tag-red">Pendiente</span>`}
+          ${syncBadge(r)}
+          ${r.approved ? `<span class="tag tag-green">✓ Aprobado</span>` : `<span class="tag tag-red">Por aprobar</span>`}
         </div>
       </div>
       <div class="history-hours">${r.hours.toFixed(1)}<span>horas</span></div>
@@ -2080,22 +2121,27 @@ function submitRange() {
   const totalHours = days.reduce((a,d) => a + d.hours, 0);
 
   // Save each day as individual record
+  const rangeNew = [];
   days.forEach(d => {
     const record = {
-      id: Date.now() + Math.random(),
+      id: 'R' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
       empName: name, empNum: num,
       auxAName, auxANum, auxBName, auxBNum,
       date: d.date, timeStart: d.start, timeEnd: d.end,
       hours: d.hours, workType: type, workSubtype: subtype,
       client, project: province, desc: d.desc,
+      brigade, city: (document.getElementById('r-city').value || '').trim(),
+      source: 'Rango de fecha',
       signature: null,
       supervisorName: supName,
       approved: rangeApproved,
       createdAt: new Date().toISOString()
     };
     records.unshift(record);
+    rangeNew.push(record);
   });
   localStorage.setItem('overtime_records', JSON.stringify(records));
+  syncEnqueue(rangeNew);
 
   // Generate range PDF
   generateRangePDF({ name, num, auxAName, auxANum, auxBName, auxBNum, type, subtype, client, province, supName, days, totalHours });
@@ -2797,5 +2843,156 @@ function obraResumen() {
 }
 </script>
 
+<script>
+// ═══════════════════════════════════════════════════════════════════
+//  ENVÍO AUTOMÁTICO A CONTABILIDAD + APP INSTALABLE
+// ═══════════════════════════════════════════════════════════════════
+const SYNC_CFG = window.SILPLAN_CONFIG || {};
+let syncBusy = false, syncLastError = '';
+
+function syncSaveRecords() {
+  try { localStorage.setItem('overtime_records', JSON.stringify(records)); } catch (e) {}
+}
+function syncPending() { return records.filter(r => r.syncPending && !r.synced); }
+
+function syncEnqueue(list) {
+  list.forEach(r => { r.syncPending = true; r.synced = null; });
+  syncSaveRecords();
+  if (list[0]) profileSave(list[0]);
+  syncFlush();
+}
+
+async function syncFlush(manual) {
+  const pend = syncPending();
+  if (!pend.length) { syncRender(); return; }
+  if (!SYNC_CFG.ENDPOINT) { syncLastError = 'config'; syncRender(); return; }
+  if (!navigator.onLine) { syncLastError = 'offline'; syncRender(); return; }
+  if (syncBusy) return;
+  syncBusy = true; syncRender();
+  try {
+    for (let i = 0; i < pend.length; i += 15) {
+      const batch = pend.slice(i, i + 15);
+      const res = await fetch(SYNC_CFG.ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // evita preflight CORS con Apps Script
+        body: JSON.stringify({ token: SYNC_CFG.TOKEN, device: navigator.userAgent.slice(0, 120), records: batch }),
+        redirect: 'follow'
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'respuesta inválida');
+      const okIds = new Set((data.received || []).map(String));
+      const now = new Date().toISOString();
+      batch.forEach(r => { if (okIds.has(String(r.id))) { r.synced = now; r.syncPending = false; } });
+      syncSaveRecords();
+    }
+    syncLastError = '';
+  } catch (e) {
+    syncLastError = String(e && e.message || e);
+  } finally {
+    syncBusy = false;
+    syncRender();
+    if (document.getElementById('view-history').classList.contains('active')) renderHistory();
+  }
+}
+
+function syncRender() {
+  const bar = document.getElementById('sync-bar');
+  if (!bar) return;
+  const n = syncPending().length;
+  bar.className = 'sync-bar';
+  if (syncBusy) { bar.classList.add('show', 'pending'); bar.textContent = `⏳ Enviando ${n} registro(s) a Contabilidad...`; return; }
+  if (!n) {
+    const sent = records.filter(r => r.synced).length;
+    if (sent) { bar.classList.add('show', 'ok'); bar.textContent = `✓ Todo enviado a Contabilidad (${sent} registro(s))`; }
+    return;
+  }
+  bar.classList.add('show', syncLastError && syncLastError !== 'offline' && syncLastError !== 'config' ? 'err' : 'pending');
+  bar.textContent =
+    syncLastError === 'config'  ? `⏳ ${n} registro(s) guardados. El envío a Contabilidad aún no está configurado (se enviarán solos al configurarlo).` :
+    syncLastError === 'offline' ? `📴 Sin conexión — ${n} registro(s) se enviarán automáticamente al volver la señal.` :
+    syncLastError               ? `⚠️ No se pudo enviar ${n} registro(s). Toca aquí para reintentar.` :
+                                  `⏳ ${n} registro(s) pendientes de envío. Toca para enviar.`;
+}
+
+function syncBadge(r) {
+  if (r.synced) return '<span class="tag tag-green">📤 Enviado a contabilidad</span>';
+  if (r.syncPending) return '<span class="tag tag-amber">⏳ Por enviar</span>';
+  return '';
+}
+
+window.addEventListener('online', () => syncFlush());
+window.addEventListener('offline', () => { syncLastError = 'offline'; syncRender(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) syncFlush(); });
+setInterval(() => { if (syncPending().length) syncFlush(); }, 60000);
+window.addEventListener('load', () => { profileFill(); syncFlush(); });
+
+// No perder registros sin enviar al limpiar el historial
+const _clearHistoryOrig = clearHistory;
+clearHistory = function () {
+  const n = syncPending().length;
+  if (n && !confirm(`Hay ${n} registro(s) que todavía NO se han enviado a Contabilidad. Si limpias el historial se perderán. ¿Continuar?`)) return;
+  _clearHistoryOrig();
+  syncRender();
+};
+
+// ─── Recordar los datos del empleado en este móvil ──────────────────
+const PROFILE_FIELDS = ['emp-name','emp-num','aux-a-name','aux-a-num','aux-b-name','aux-b-num'];
+function profileSave(r) {
+  try {
+    localStorage.setItem('silplan_profile', JSON.stringify({
+      'emp-name': r.empName, 'emp-num': r.empNum, 'aux-a-name': r.auxAName, 'aux-a-num': r.auxANum,
+      'aux-b-name': r.auxBName, 'aux-b-num': r.auxBNum, brigade: r.brigade
+    }));
+  } catch (e) {}
+}
+function profileFill() {
+  let p; try { p = JSON.parse(localStorage.getItem('silplan_profile') || 'null'); } catch (e) {}
+  if (!p) return;
+  PROFILE_FIELDS.forEach(id => {
+    const el = document.getElementById(id), rid = document.getElementById('r-' + id);
+    if (el && !el.value && p[id]) el.value = p[id];
+    if (rid && !rid.value && p[id]) rid.value = p[id];
+  });
+  const b = parseInt(String(p.brigade || '').replace(/\D/g, ''), 10);
+  if (b && !document.getElementById('brigade-num').value) { try { selectBrigade(b); } catch (e) {} }
+  if (b && !document.getElementById('r-brigade-num').value) { try { selectBrigadeRange(b); } catch (e) {} }
+}
+const _resetFormOrig = resetForm;
+resetForm = function () { _resetFormOrig(); const c = document.getElementById('city'); if (c) c.value = ''; profileFill(); };
+
+// ─── App instalable (PWA) ───────────────────────────────────────────
+let deferredInstall = null;
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+function showInstall(text, withButton) {
+  try { if (localStorage.getItem('silplan_install_dismissed')) return; } catch (e) {}
+  if (isStandalone()) return;
+  document.getElementById('install-text').textContent = text;
+  document.getElementById('install-btn').style.display = withButton ? '' : 'none';
+  document.getElementById('install-bar').style.display = 'flex';
+}
+function dismissInstall() {
+  document.getElementById('install-bar').style.display = 'none';
+  try { localStorage.setItem('silplan_install_dismissed', '1'); } catch (e) {}
+}
+async function installApp() {
+  if (!deferredInstall) return;
+  deferredInstall.prompt();
+  await deferredInstall.userChoice;
+  deferredInstall = null;
+  document.getElementById('install-bar').style.display = 'none';
+}
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); deferredInstall = e;
+  showInstall('Agrégala a tu pantalla de inicio para usarla como aplicación, incluso sin señal.', true);
+});
+window.addEventListener('appinstalled', () => { document.getElementById('install-bar').style.display = 'none'; });
+if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !isStandalone()) {
+  window.addEventListener('load', () => showInstall('En iPhone: toca el botón Compartir ⬆️ y luego "Agregar a pantalla de inicio".', false));
+}
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+syncRender();
+</script>
 </body>
 </html>
